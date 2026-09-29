@@ -68,7 +68,7 @@ function block(x: Matrix, p: BlockParams, cfg: ModelConfig): BlockTrace {
 }
 
 /** Runs the full forward pass and records every intermediate value. */
-export function runForward(model: TinyGpt, ids: number[]): ForwardTrace {
+export function runForward(model: Pick<TinyGpt, "config" | "params">, ids: number[]): ForwardTrace {
   const { config: cfg, params } = model;
   if (ids.length === 0) throw new Error("need at least one token");
   if (ids.length > cfg.nCtx) throw new Error(`context length is ${cfg.nCtx}`);

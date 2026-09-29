@@ -1,13 +1,6 @@
 import type { ReactNode } from "react";
 import { useStep } from "../steps/step-context";
 
-function crumb(group: string, layer: number | undefined, sub: string | undefined): string {
-  if (group === "start") return "Start";
-  if (group === "input") return "Input";
-  if (group === "output") return "Output";
-  return `Block ${(layer ?? 0) + 1} › ${sub === "mlp" ? "MLP" : "Attention"}`;
-}
-
 export function StepLayout({
   explain,
   formula,
@@ -27,7 +20,8 @@ export function StepLayout({
       <div className="step-scroll">
         <header className="step-header">
           <div className="step-crumb">
-            {crumb(step.group, step.layer, step.sub)} · step {index} of {steps.length - 1}
+            {step.section}
+            {step.subsection ? ` › ${step.subsection}` : ""} · step {index} of {steps.length - 1}
           </div>
           <h1>{step.title}</h1>
         </header>

@@ -179,8 +179,14 @@ kbd {
   font-size: 13px;
 }
 
+.tabs .tex {
+  pointer-events: none;
+}
+
 .tabs {
-  display: inline-flex;
+  display: flex;
+  width: fit-content;
+  flex-wrap: wrap;
   background: #eef2f7;
   border-radius: 8px;
   padding: 3px;
@@ -1566,6 +1572,244 @@ details.deeper .prose {
   background: var(--accent);
   border-radius: 2px;
   transition: width 0.2s;
+}
+
+/* ---------- Pretraining mode ---------- */
+
+.mode-tabs {
+  margin-bottom: 0;
+}
+
+.sentence-select,
+.param-select select {
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.param-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.control-row .param-select {
+  margin-bottom: 0;
+}
+
+.trainer-status {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.trainer-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.trainer-readout {
+  font-size: 13px;
+  color: #4b5563;
+  margin-left: 6px;
+}
+
+.settings-row input {
+  width: 90px;
+  padding: 3px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-family: var(--mono);
+}
+
+.arch-block.backward {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.arch-block.backward .arch-block-title {
+  color: #b91c1c;
+}
+
+.prose ol {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+.shift-viz {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shift-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.shift-label {
+  width: 80px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--faint);
+}
+
+.token-card.small {
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 70px;
+  padding: 4px 10px;
+}
+
+.token-card.small .token-card-word {
+  font-size: 15px;
+}
+
+.token-card.target {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.token-card.target.focus {
+  border-color: var(--ink);
+}
+
+.corpus-table.clickable tbody tr {
+  cursor: pointer;
+}
+
+.corpus-table.clickable tbody tr:hover td {
+  background: #f8fafc;
+}
+
+.corpus-table tr.current td {
+  background: #fef3c7;
+}
+
+.init-layout,
+.gradcheck-layout,
+.dynamics-top {
+  display: flex;
+  gap: 40px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-left: 92px;
+}
+
+.gradcheck-table {
+  margin-top: 6px;
+}
+
+.gradcheck-table tbody tr {
+  cursor: pointer;
+}
+
+.stack,
+.stack-viz {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.step-viz > .stack-viz,
+.step-viz > .gelu-mats,
+.step-viz > .matrix,
+.qkv-sum > .eq-row {
+  margin-left: 92px;
+}
+
+.qkv-sum {
+  margin-top: 24px;
+}
+
+.loss-bar {
+  background: #dc2626;
+}
+
+.delta-up {
+  color: #059669;
+}
+
+.delta-down {
+  color: #dc2626;
+}
+
+.matrix-unit {
+  font-size: 11px;
+  color: var(--accent-ink);
+}
+
+.loss-curve .axis,
+.pca-plot .axis {
+  stroke: #d1d5db;
+}
+
+.loss-curve .tick {
+  font-size: 10px;
+  fill: var(--faint);
+}
+
+.corpus-line {
+  fill: none;
+  stroke: #7c3aed;
+  stroke-width: 2;
+}
+
+.batch-line {
+  fill: none;
+  stroke: #c4b5fd;
+  stroke-width: 1;
+  opacity: 0.6;
+}
+
+.optimal-line {
+  stroke: #059669;
+  stroke-dasharray: 5 4;
+}
+
+.snapshot-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 20px;
+}
+
+.snapshot-label {
+  font-size: 14px;
+}
+
+.dynamics-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-top: 20px;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.panel .matrix {
+  margin-left: 110px;
+}
+
+.pca-label {
+  font-family: var(--mono);
+  font-size: 11px;
 }
 
 @media (max-width: 1150px) {

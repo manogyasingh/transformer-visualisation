@@ -8,13 +8,15 @@ Forward and backward passes are written out by hand; the backward pass is
 verified against finite differences before training starts.
 
 Usage:
-    python3 training/train-tiny-gpt.py
+    python3 training/train-tiny-gpt.py                   # train from scratch
+    python3 training/train-tiny-gpt.py --reference-only  # only recompute test gradients
 
 Writes src/model/tiny-gpt-weights.json, which the visualiser loads.
 """
 
 import json
 import math
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -350,25 +352,58 @@ def to_list(a):
     return np.asarray(a).tolist()
 
 
-def export(p, cfg, final_loss, rounded_loss, best_loss, steps):
+NESTED_KEYS = [
+    ("ln1", "gamma", "ln1.g"), ("ln1", "beta", "ln1.b"),
+    ("attn", "wq", "attn.wq"), ("attn", "bq", "attn.bq"),
+    ("attn", "wk", "attn.wk"), ("attn", "bk", "attn.bk"),
+    ("attn", "wv", "attn.wv"), ("attn", "bv", "attn.bv"),
+    ("attn", "wo", "attn.wo"), ("attn", "bo", "attn.bo"),
+    ("ln2", "gamma", "ln2.g"), ("ln2", "beta", "ln2.b"),
+    ("mlp", "w1", "mlp.w1"), ("mlp", "b1", "mlp.b1"),
+    ("mlp", "w2", "mlp.w2"), ("mlp", "b2", "mlp.b2"),
+]
+
+
+def nest(p, cfg):
+    """Flat parameter dict -> the nested JSON layout used by the visualiser."""
     layers = []
     for l in range(cfg["n_layers"]):
-        pre = f"h{l}."
-        layers.append({
-            "ln1": {"gamma": to_list(p[pre + "ln1.g"]), "beta": to_list(p[pre + "ln1.b"])},
-            "attn": {
-                "wq": to_list(p[pre + "attn.wq"]), "bq": to_list(p[pre + "attn.bq"]),
-                "wk": to_list(p[pre + "attn.wk"]), "bk": to_list(p[pre + "attn.bk"]),
-                "wv": to_list(p[pre + "attn.wv"]), "bv": to_list(p[pre + "attn.bv"]),
-                "wo": to_list(p[pre + "attn.wo"]), "bo": to_list(p[pre + "attn.bo"]),
-            },
-            "ln2": {"gamma": to_list(p[pre + "ln2.g"]), "beta": to_list(p[pre + "ln2.b"])},
-            "mlp": {
-                "w1": to_list(p[pre + "mlp.w1"]), "b1": to_list(p[pre + "mlp.b1"]),
-                "w2": to_list(p[pre + "mlp.w2"]), "b2": to_list(p[pre + "mlp.b2"]),
-            },
-        })
+        layer = {}
+        for group, key, flat in NESTED_KEYS:
+            layer.setdefault(group, {})[key] = to_list(p[f"h{l}.{flat}"])
+        layers.append(layer)
+    return {
+        "wte": to_list(p["wte"]),
+        "wpe": to_list(p["wpe"]),
+        "layers": layers,
+        "lnf": {"gamma": to_list(p["lnf.g"]), "beta": to_list(p["lnf.b"])},
+    }
 
+
+def unnest(n):
+    p = {
+        "wte": np.array(n["wte"]),
+        "wpe": np.array(n["wpe"]),
+        "lnf.g": np.array(n["lnf"]["gamma"]),
+        "lnf.b": np.array(n["lnf"]["beta"]),
+    }
+    for l, layer in enumerate(n["layers"]):
+        for group, key, flat in NESTED_KEYS:
+            p[f"h{l}.{flat}"] = np.array(layer[group][key])
+    return p
+
+
+REFERENCE_SENTENCE = "the cat sat on the mat ."
+
+
+def reference_gradients(p, cfg):
+    """Loss and gradients for one sentence (mean over its positions), for testing the TS backward pass."""
+    ids = np.array([encode(REFERENCE_SENTENCE)])
+    loss, grads = loss_and_grads(p, ids[:, :-1], ids[:, 1:], cfg)
+    return {"sentence": REFERENCE_SENTENCE, "loss": float(loss), "grads": nest(grads, cfg)}
+
+
+def export(p, cfg, final_loss, rounded_loss, best_loss, steps):
     reference = []
     for prompt in PRESET_PROMPTS:
         ids = np.array([encode(prompt)])
@@ -386,12 +421,7 @@ def export(p, cfg, final_loss, rounded_loss, best_loss, steps):
             "nLayers": cfg["n_layers"],
             "lnEps": cfg["ln_eps"],
         },
-        "params": {
-            "wte": to_list(p["wte"]),
-            "wpe": to_list(p["wpe"]),
-            "layers": layers,
-            "lnf": {"gamma": to_list(p["lnf.g"]), "beta": to_list(p["lnf.b"])},
-        },
+        "params": nest(p, cfg),
         "training": {
             "corpus": [{"text": t, "count": c} for t, c in CORPUS],
             "presetPrompts": PRESET_PROMPTS,
@@ -401,6 +431,7 @@ def export(p, cfg, final_loss, rounded_loss, best_loss, steps):
             "optimalLoss": best_loss,
         },
         "reference": reference,
+        "referenceGrads": reference_gradients(p, cfg),
     }
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(json.dumps(out, separators=(",", ":")))
@@ -409,6 +440,12 @@ def export(p, cfg, final_loss, rounded_loss, best_loss, steps):
 
 def main():
     cfg = CONFIG
+    if "--reference-only" in sys.argv:
+        data = json.loads(OUT_PATH.read_text())
+        data["referenceGrads"] = reference_gradients(unnest(data["params"]), cfg)
+        OUT_PATH.write_text(json.dumps(data, separators=(",", ":")))
+        print(f"updated referenceGrads in {OUT_PATH.relative_to(ROOT)}")
+        return
     gradient_check(cfg)
     steps = 6000
     p, final_loss = train(cfg, steps=steps)

@@ -46,6 +46,8 @@ export interface MatrixViewProps {
   dimRow?: (i: number) => boolean;
   dimCell?: (i: number, j: number) => boolean;
   markRow?: number;
+  /** Display values multiplied by a power of ten (shown in the label) so small gradients stay readable. */
+  autoScale?: boolean;
   onHover?: (i: number, j: number) => void;
 }
 
@@ -66,12 +68,16 @@ export function MatrixView({
   dimRow,
   dimCell,
   markRow,
+  autoScale = false,
   onHover,
 }: MatrixViewProps) {
   const rows = data.length;
   const cols = data[0]?.length ?? 0;
   const { w, h, font } = SIZES[size];
   const scaleMax = maxAbs ?? maxAbsOf(data);
+  const exponent = autoScale && scaleMax > 0 ? Math.floor(Math.log10(scaleMax)) : 0;
+  const shift = exponent < -1 ? exponent : 0;
+  const unit = 10 ** shift;
   const stepX = w + GAP;
   const stepY = h + GAP;
   const gridStyle = { gridTemplateColumns: `repeat(${cols}, ${w}px)`, columnGap: GAP };
@@ -87,6 +93,11 @@ export function MatrixView({
           {showShape && (
             <span className="matrix-shape">
               {rows}×{cols}
+            </span>
+          )}
+          {shift !== 0 && (
+            <span className="matrix-unit">
+              <Tex>{`\\times 10^{${shift}}`}</Tex>
             </span>
           )}
           {note && <span className="matrix-note">{note}</span>}
@@ -144,7 +155,7 @@ export function MatrixView({
                 style={{ background, color, height: h, fontSize: font }}
                 onMouseEnter={onHover ? () => onHover(i, j) : undefined}
               >
-                {font > 0 ? fmt(v, dp) : null}
+                {font > 0 ? fmt(v / unit, dp) : null}
               </div>
             );
           }),

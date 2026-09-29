@@ -61,6 +61,7 @@ export interface TinyGpt {
   params: ModelParams;
   training: TrainingInfo;
   reference: { prompt: string; ids: number[]; logits: Vector }[];
+  referenceGrads: { sentence: string; loss: number; grads: ModelParams };
 }
 
 export interface LayerNormTrace {

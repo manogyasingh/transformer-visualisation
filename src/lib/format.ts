@@ -67,6 +67,36 @@ export function texSum(values: number[], dp = 4): string {
   return values.map((v, i) => tsigned(v, dp, i === 0)).join(" ");
 }
 
+/** TeX number with `sig` significant figures, switching to scientific notation for small values. */
+export function tg(x: number, sig = 4): string {
+  if (x === 0) return "0";
+  if (!Number.isFinite(x)) return tn(x);
+  const a = Math.abs(x);
+  if (a >= 1e-3 && a < 1e5) return String(Number(x.toPrecision(sig)));
+  const [m, e] = x.toExponential(sig - 1).split("e");
+  return `${m}\\times10^{${Number(e)}}`;
+}
+
+/** Parenthesised factor in gradient notation. */
+export function tgp(x: number): string {
+  return `(${tg(x)})`;
+}
+
+/** Operand of + or - in gradient notation, parenthesised only when negative. */
+export function tga(x: number): string {
+  return x < 0 ? tgp(x) : tg(x);
+}
+
+export function tgSum(values: number[]): string {
+  return values
+    .map((v, i) => {
+      const s = tg(v);
+      if (i === 0) return s;
+      return s.startsWith("-") ? `- ${s.slice(1)}` : `+ ${s}`;
+    })
+    .join(" ");
+}
+
 export interface DotExpansion {
   /** "(a0)(b0) + (a1)(b1) + ..." */
   factors: string;
@@ -82,19 +112,20 @@ export interface DotExpansion {
 export function dotExpansion(
   a: number[],
   b: number[],
-  opts: { emphasize?: number; dp?: number; aColor?: string; bColor?: string } = {},
+  opts: { emphasize?: number; dp?: number; aColor?: string; bColor?: string; sig?: boolean } = {},
 ): DotExpansion {
   const dp = opts.dp ?? 4;
   const aColor = opts.aColor ?? ROW_COLOR;
   const bColor = opts.bColor ?? COL_COLOR;
+  const factor = opts.sig ? tgp : (x: number) => tp(x, dp);
   const terms = a.map((x, k) => {
-    const t = `${colored(aColor, tp(x, dp))}${colored(bColor, tp(b[k], dp))}`;
+    const t = `${colored(aColor, factor(x))}${colored(bColor, factor(b[k]))}`;
     return k === opts.emphasize ? emphasized(t) : t;
   });
   const prods = a.map((x, k) => x * b[k]);
   return {
     factors: terms.join(" + "),
-    products: texSum(prods, dp),
+    products: opts.sig ? tgSum(prods) : texSum(prods, dp),
     value: prods.reduce((s, v) => s + v, 0),
   };
 }

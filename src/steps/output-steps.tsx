@@ -6,6 +6,7 @@ import { MatrixView } from "../components/matrix-view";
 import { StepLayout } from "../components/step-layout";
 import { Tex } from "../components/tex";
 import { boxed, colored, COL_COLOR, dotExpansion, fmt, ROW_COLOR, tn, tsci } from "../lib/format";
+import { corpusNextCounts } from "../model/corpus";
 import { runForward } from "../model/forward";
 import { argmax, transpose } from "../model/linalg";
 import { decode, type Strategy } from "../model/sampling";
@@ -13,20 +14,6 @@ import type { TinyGpt } from "../model/types";
 import { useStep } from "./step-context";
 import { LayerNormStep } from "./layer-norm-step";
 import { indexLabels, Tok, tokenRowLabels, useCell } from "./shared";
-
-function corpusNextCounts(model: TinyGpt, ids: number[]): { counts: Map<number, number>; total: number } {
-  const counts = new Map<number, number>();
-  let total = 0;
-  for (const { text, count } of model.training.corpus) {
-    const toks = text.split(" ").map((w) => model.config.vocab.indexOf(w));
-    if (toks.length > ids.length && ids.every((id, i) => toks[i] === id)) {
-      const next = toks[ids.length];
-      counts.set(next, (counts.get(next) ?? 0) + count);
-      total += count;
-    }
-  }
-  return { counts, total };
-}
 
 function softmax(z: number[]): number[] {
   const m = Math.max(...z);

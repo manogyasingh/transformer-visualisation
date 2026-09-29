@@ -3,30 +3,28 @@ import type { ModelConfig } from "../model/types";
 import type { StepDef } from "../steps/step-defs";
 
 interface Group {
-  key: string;
   title: string;
   collapsible: boolean;
   subs: { title?: string; steps: StepDef[] }[];
 }
 
-function groupSteps(steps: StepDef[], cfg: ModelConfig): Group[] {
-  const groups: Group[] = [
-    { key: "start", title: "Start", collapsible: false, subs: [{ steps: steps.filter((s) => s.group === "start") }] },
-    { key: "input", title: "Input", collapsible: false, subs: [{ steps: steps.filter((s) => s.group === "input") }] },
-  ];
-  for (let l = 0; l < cfg.nLayers; l++) {
-    const b = steps.filter((s) => s.layer === l);
-    groups.push({
-      key: `block-${l}`,
-      title: `Block ${l + 1}`,
-      collapsible: true,
-      subs: [
-        { title: "Attention", steps: b.filter((s) => s.sub === "attention") },
-        { title: "MLP", steps: b.filter((s) => s.sub === "mlp") },
-      ],
-    });
+/** Groups consecutive steps by section, and within a section by subsection. */
+function groupSteps(steps: StepDef[]): Group[] {
+  const groups: Group[] = [];
+  for (const s of steps) {
+    let g = groups[groups.length - 1];
+    if (!g || g.title !== s.section) {
+      g = { title: s.section, collapsible: false, subs: [] };
+      groups.push(g);
+    }
+    let sub = g.subs[g.subs.length - 1];
+    if (!sub || sub.title !== s.subsection) {
+      sub = { title: s.subsection, steps: [] };
+      g.subs.push(sub);
+    }
+    sub.steps.push(s);
+    if (s.subsection) g.collapsible = true;
   }
-  groups.push({ key: "output", title: "Output", collapsible: false, subs: [{ steps: steps.filter((s) => s.group === "output") }] });
   return groups;
 }
 
@@ -43,7 +41,7 @@ export function Sidebar({
   T: number;
   cfg: ModelConfig;
 }) {
-  const groups = groupSteps(steps, cfg);
+  const groups = groupSteps(steps);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const currentStep = steps[current];
 
@@ -51,12 +49,12 @@ export function Sidebar({
     <nav className="sidebar">
       {groups.map((g) => {
         const containsCurrent = g.subs.some((s) => s.steps.includes(currentStep));
-        const isOpen = !g.collapsible || containsCurrent || open[g.key];
+        const isOpen = !g.collapsible || containsCurrent || open[g.title];
         return (
-          <div key={g.key} className={`nav-group${containsCurrent ? " current" : ""}`}>
+          <div key={g.title} className={`nav-group${containsCurrent ? " current" : ""}`}>
             <button
               className="nav-group-title"
-              onClick={() => g.collapsible && setOpen((o) => ({ ...o, [g.key]: !isOpen }))}
+              onClick={() => g.collapsible && setOpen((o) => ({ ...o, [g.title]: !isOpen }))}
             >
               {g.collapsible && <span className="nav-caret">{isOpen ? "▾" : "▸"}</span>}
               {g.title}
