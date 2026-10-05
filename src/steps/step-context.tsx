@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 import type { DecodingSettings, SamplingResult } from "../model/sampling";
 import type { ForwardTrace, ModelConfig, TinyGpt } from "../model/types";
-import type { StepDef } from "./step-defs";
+import type { ChapterDef, StepDef } from "./step-defs";
 
 export interface StepContextValue {
   model: TinyGpt;
@@ -16,6 +16,7 @@ export interface StepContextValue {
   setHead: (h: number) => void;
   calcOpen: boolean;
   setCalcOpen: (open: boolean) => void;
+  chapter: ChapterDef;
   steps: StepDef[];
   step: StepDef;
   index: number;

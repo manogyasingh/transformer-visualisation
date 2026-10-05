@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "train": "python3 training/train-tiny-gpt.py"
+    "train": "python3 training/train-tiny-gpt.py",
+    "train-rm": "python3 training/train-reward-model.py"
   },
   "dependencies": {
     "katex": "^0.18.9",

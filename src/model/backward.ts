@@ -142,32 +142,28 @@ function blockBackward(dOut: Matrix, b: BlockTrace, p: BlockParams, cfg: ModelCo
   return { dOut, mlpDown, geluDeriv, dU, mlpUp, ln2, dR, attnProj, heads, q, k, v, dY, ln1, dIn: add(dR, ln1.dX) };
 }
 
+export interface FinalBackward {
+  lnf: LayerNormGrad;
+  blocks: BlockGrad[];
+  dX0: Matrix;
+  /** W_E gradient from its use as the embedding lookup table. */
+  dWteIn: Matrix;
+  dWpe: Matrix;
+  /** Gradients of every weight; `wte` holds only the embedding-lookup part. */
+  grads: ModelParams;
+}
+
 /**
- * Forward and backward pass for one sequence, recording every gradient.
- * The loss is scale · Σ_i −log p(targets_i); scale defaults to 1/T (mean over positions).
+ * Backpropagates dF, the gradient arriving at the final LayerNorm's output, down to every weight.
+ * Scalar heads (reward and value models) start here; language-model losses start at the logits.
  */
-export function forwardBackward(
+export function backwardFromFinal(
   model: { config: ModelConfig; params: ModelParams },
-  ids: number[],
-  targets: number[],
-  scale = 1 / ids.length,
-): TrainTrace {
+  forward: ForwardTrace,
+  dF: Matrix,
+): FinalBackward {
   const { config: cfg, params } = model;
-  const forward = runForward(model, ids);
-  const probs = forward.logitsAll.map((z) => {
-    const m = Math.max(...z);
-    const e = z.map((v) => Math.exp(v - m));
-    const s = e.reduce((a, c) => a + c, 0);
-    return e.map((v) => v / s);
-  });
-  const nll = targets.map((t, i) => -Math.log(probs[i][t]));
-  const loss = scale * nll.reduce((a, c) => a + c, 0);
-
-  const dLogits = probs.map((r, i) => r.map((p, v) => (p - (v === targets[i] ? 1 : 0)) * scale));
-  const dF = matmul(dLogits, params.wte);
-  const dWteOut = matmul(transpose(dLogits), forward.lnf.output);
   const lnf = layerNormBackward(dF, forward.lnf);
-
   const blocks: BlockGrad[] = new Array(cfg.nLayers);
   let d = lnf.dX;
   for (let l = cfg.nLayers - 1; l >= 0; l--) {
@@ -175,12 +171,13 @@ export function forwardBackward(
     d = blocks[l].dIn;
   }
   const dX0 = d;
+  const ids = forward.ids;
   const dWteIn = params.wte.map((r) => r.map(() => 0));
   ids.forEach((id, i) => dX0[i].forEach((g, j) => (dWteIn[id][j] += g)));
   const dWpe = params.wpe.map((r, i) => (i < ids.length ? dX0[i].slice() : r.map(() => 0)));
 
   const grads: ModelParams = {
-    wte: add(dWteOut, dWteIn),
+    wte: dWteIn,
     wpe: dWpe,
     layers: blocks.map((g) => ({
       ln1: { gamma: g.ln1.dGamma, beta: g.ln1.dBeta },
@@ -199,8 +196,53 @@ export function forwardBackward(
     })),
     lnf: { gamma: lnf.dGamma, beta: lnf.dBeta },
   };
+  return { lnf, blocks, dX0, dWteIn, dWpe, grads };
+}
 
-  return { forward, targets, scale, probs, nll, loss, dLogits, dF, dWteOut, lnf, blocks, dX0, dWteIn, dWpe, grads };
+export interface LogitsBackward extends FinalBackward {
+  dF: Matrix;
+  /** W_E gradient from its use as the unembedding matrix. */
+  dWteOut: Matrix;
+}
+
+/** Backpropagates a gradient on the logits (T × V) to every weight, including both uses of the tied W_E. */
+export function backwardFromLogits(
+  model: { config: ModelConfig; params: ModelParams },
+  forward: ForwardTrace,
+  dLogits: Matrix,
+): LogitsBackward {
+  const dF = matmul(dLogits, model.params.wte);
+  const dWteOut = matmul(transpose(dLogits), forward.lnf.output);
+  const back = backwardFromFinal(model, forward, dF);
+  return { ...back, dF, dWteOut, grads: { ...back.grads, wte: add(dWteOut, back.dWteIn) } };
+}
+
+export function softmaxRows(logits: Matrix): Matrix {
+  return logits.map((z) => {
+    const m = Math.max(...z);
+    const e = z.map((v) => Math.exp(v - m));
+    const s = e.reduce((a, c) => a + c, 0);
+    return e.map((v) => v / s);
+  });
+}
+
+/**
+ * Forward and backward pass for one sequence, recording every gradient.
+ * The loss is scale · Σ_i −log p(targets_i); scale defaults to 1/T (mean over positions).
+ */
+export function forwardBackward(
+  model: { config: ModelConfig; params: ModelParams },
+  ids: number[],
+  targets: number[],
+  scale = 1 / ids.length,
+): TrainTrace {
+  const forward = runForward(model, ids);
+  const probs = softmaxRows(forward.logitsAll);
+  const nll = targets.map((t, i) => -Math.log(probs[i][t]));
+  const loss = scale * nll.reduce((a, c) => a + c, 0);
+  const dLogits = probs.map((r, i) => r.map((p, v) => (p - (v === targets[i] ? 1 : 0)) * scale));
+  const back = backwardFromLogits(model, forward, dLogits);
+  return { forward, targets, scale, probs, nll, loss, dLogits, ...back };
 }
 
 export interface Example {

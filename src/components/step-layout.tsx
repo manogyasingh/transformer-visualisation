@@ -14,13 +14,13 @@ export function StepLayout({
   calc?: ReactNode;
   children?: ReactNode;
 }) {
-  const { step, index, steps } = useStep();
+  const { chapter, step, index, steps } = useStep();
   return (
     <div className="step">
       <div className="step-scroll">
         <header className="step-header">
           <div className="step-crumb">
-            {step.section}
+            {chapter.title} › {step.section}
             {step.subsection ? ` › ${step.subsection}` : ""} · step {index} of {steps.length - 1}
           </div>
           <h1>{step.title}</h1>

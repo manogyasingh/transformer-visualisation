@@ -177,3 +177,51 @@ export function buildTrainingSteps(cfg: ModelConfig): StepDef[] {
   );
   return steps;
 }
+
+/** In the post-training chapter the sidebar's T is the number of response tokens in the batch. */
+export function buildPostTrainingSteps(): StepDef[] {
+  const step = (section: string, id: string, navLabel: string, title: string, shape: StepDef["shape"] = () => ""): StepDef => ({
+    id,
+    kind: id,
+    section,
+    navLabel,
+    title,
+    shape,
+  });
+  const perToken: StepDef["shape"] = (n) => `${n} tokens`;
+  return [
+    step("Start", "p-overview", "Overview", "Post-training: one iteration of RLHF with PPO"),
+    step("Reward model", "p-reward-model", "Learning from comparisons", "The reward model: learning what labelers prefer"),
+    step("Rollout", "p-rollout", "Sample responses", "Rollouts: the policy answers every prompt", () => "8 responses"),
+    step("Rollout", "p-logprobs", "Policy vs reference", "Log-probabilities under the policy and the reference", perToken),
+    step("Rewards", "p-score", "Reward-model score", "The reward model scores each response", () => "8 scores"),
+    step("Rewards", "p-rewards", "Per-token rewards", "Per-token rewards: a KL penalty on every token, the score at the end", perToken),
+    step("Advantages", "p-values", "Value estimates", "The value model predicts the return", perToken),
+    step("Advantages", "p-gae", "GAE", "Generalized advantage estimation", perToken),
+    step("Advantages", "p-whiten", "Whitening", "Whitening the advantages", perToken),
+    step("PPO update", "p-ratio", "Clipped objective", "The probability ratio and the clipped objective", perToken),
+    step("PPO update", "p-policy-grad", "Gradient at the logits", "From the objective to the logits", (_, c) => `T×${c.vocab.length}`),
+    step("PPO update", "p-ptx", "Pretraining mix", "The pretraining mix: InstructGPT's PPO-ptx"),
+    step("PPO update", "p-value-loss", "Value loss", "Training the value model", perToken),
+    step("PPO update", "p-epochs", "Epochs", "Several epochs on the same batch"),
+    step("PPO update", "p-after", "After the iteration", "Did it help? The policy before and after one iteration"),
+    step("Training over time", "p-dynamics", "Watch it learn", "Many iterations: alignment, the KL leash, and reward hacking"),
+  ];
+}
+
+export interface ChapterDef {
+  /** First part of the URL hash, `#<chapter id>/<step id>`. */
+  id: string;
+  title: string;
+  subtitle: string;
+  /** Step ids must be unique across all chapters: `goTo` and old-style links look a step up by id alone. */
+  steps: StepDef[];
+}
+
+export function buildChapters(cfg: ModelConfig): ChapterDef[] {
+  return [
+    { id: "inference", title: "Inference", subtitle: "Generate one token", steps: buildSteps(cfg) },
+    { id: "pretraining", title: "Pretraining", subtitle: "One training step", steps: buildTrainingSteps(cfg) },
+    { id: "post-training", title: "Post-training", subtitle: "One PPO iteration (RLHF)", steps: buildPostTrainingSteps() },
+  ];
+}

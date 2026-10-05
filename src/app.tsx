@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentType } from "react";
+import { useCallback, useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { PromptEditor } from "./components/prompt-editor";
 import { Sidebar } from "./components/sidebar";
 import { forwardBackward } from "./model/backward";
@@ -30,8 +30,16 @@ import {
   SoftmaxOutStep,
   TemperatureStep,
 } from "./steps/output-steps";
+import { ppoModels } from "./post-training/models";
+import { PpoContext, type PpoContextValue } from "./post-training/ppo-context";
+import { usePpoTrainer } from "./post-training/use-ppo-trainer";
+import { PGaeStep, PValuesStep, PWhitenStep } from "./steps/post-training/advantage-steps";
+import { PDynamicsStep } from "./steps/post-training/dynamics-step";
+import { POverviewStep, PRewardModelStep } from "./steps/post-training/intro-steps";
+import { PLogprobsStep, PRewardsStep, PRolloutStep, PScoreStep } from "./steps/post-training/rollout-steps";
+import { PAfterStep, PEpochsStep, PPolicyGradStep, PPtxStep, PRatioStep, PValueLossStep } from "./steps/post-training/update-steps";
 import { StepContext, type StepContextValue } from "./steps/step-context";
-import { buildSteps, buildTrainingSteps, type StepDef } from "./steps/step-defs";
+import { buildChapters, type ChapterDef, type StepDef } from "./steps/step-defs";
 import { BLOCK_BACKWARD_COMPONENTS } from "./steps/training/block-backward-steps";
 import { TDynamicsStep } from "./steps/training/dynamics-step";
 import { TDataStep, TForwardStep, TInitStep, TLossStep, TOverviewStep, TProbsStep } from "./steps/training/intro-steps";
@@ -81,10 +89,28 @@ const STEP_COMPONENTS: Record<string, ComponentType> = {
   "t-adam": TAdamStep,
   "t-after": TAfterStep,
   "t-dynamics": TDynamicsStep,
+  "p-overview": POverviewStep,
+  "p-reward-model": PRewardModelStep,
+  "p-rollout": PRolloutStep,
+  "p-logprobs": PLogprobsStep,
+  "p-score": PScoreStep,
+  "p-rewards": PRewardsStep,
+  "p-values": PValuesStep,
+  "p-gae": PGaeStep,
+  "p-whiten": PWhitenStep,
+  "p-ratio": PRatioStep,
+  "p-policy-grad": PPolicyGradStep,
+  "p-ptx": PPtxStep,
+  "p-value-loss": PValueLossStep,
+  "p-epochs": PEpochsStep,
+  "p-after": PAfterStep,
+  "p-dynamics": PDynamicsStep,
 };
 
-type Mode = "inference" | "training";
-const TRAIN_PREFIX = "train/";
+interface Loc {
+  chapter: number;
+  index: number;
+}
 
 function isTyping(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
@@ -94,29 +120,46 @@ function navName(step: StepDef): string {
   return step.layer !== undefined ? `${step.section}: ${step.navLabel}` : step.navLabel;
 }
 
-function parseHash(infSteps: StepDef[], trainSteps: StepDef[]): { mode: Mode; index: number } | null {
-  const h = window.location.hash.slice(1);
-  if (h.startsWith(TRAIN_PREFIX) || h === "train") {
-    const i = trainSteps.findIndex((s) => s.id === h.slice(TRAIN_PREFIX.length));
-    return { mode: "training", index: Math.max(0, i) };
+function findStep(chapters: ChapterDef[], id: string): Loc | null {
+  for (let c = 0; c < chapters.length; c++) {
+    const i = chapters[c].steps.findIndex((s) => s.id === id);
+    if (i >= 0) return { chapter: c, index: i };
   }
-  const i = infSteps.findIndex((s) => s.id === h);
-  return i >= 0 ? { mode: "inference", index: i } : null;
+  return null;
+}
+
+/** Reads `#<chapter id>/<step id>`; a bare step id (`#tokenize`, `#train/t-loss`) is looked up in every chapter. */
+function parseHash(chapters: ChapterDef[]): Loc | null {
+  const [chapterId, stepId = ""] = window.location.hash.slice(1).split("/");
+  const c = chapters.findIndex((ch) => ch.id === chapterId);
+  if (c >= 0) return { chapter: c, index: Math.max(0, chapters[c].steps.findIndex((s) => s.id === stepId)) };
+  return findStep(chapters, stepId || chapterId);
+}
+
+/** The step before or after `loc`, running on into the neighbouring chapter at either end. */
+function neighbour(chapters: ChapterDef[], { chapter, index }: Loc, dir: 1 | -1): Loc | null {
+  const i = index + dir;
+  if (i >= 0 && i < chapters[chapter].steps.length) return { chapter, index: i };
+  const c = chapter + dir;
+  if (c < 0 || c >= chapters.length) return null;
+  return { chapter: c, index: dir > 0 ? 0 : chapters[c].steps.length - 1 };
 }
 
 export function App() {
   const model = tinyGpt;
   const cfg = model.config;
-  const infSteps = useMemo(() => buildSteps(cfg), [cfg]);
-  const trainSteps = useMemo(() => buildTrainingSteps(cfg), [cfg]);
-  const initial = useMemo(() => parseHash(infSteps, trainSteps), [infSteps, trainSteps]);
+  const chapters = useMemo(() => buildChapters(cfg), [cfg]);
+  const initial = useMemo(() => parseHash(chapters), [chapters]);
 
-  const [mode, setMode] = useState<Mode>(initial?.mode ?? "inference");
-  const [infIndex, setInfIndex] = useState(initial?.mode === "inference" ? initial.index : 0);
-  const [trainIndex, setTrainIndex] = useState(initial?.mode === "training" ? initial.index : 0);
-  const steps = mode === "training" ? trainSteps : infSteps;
-  const index = mode === "training" ? trainIndex : infIndex;
-  const setIndex = mode === "training" ? setTrainIndex : setInfIndex;
+  const [chapterIndex, setChapterIndex] = useState(initial?.chapter ?? 0);
+  const [positions, setPositions] = useState(() => chapters.map((_, c) => (c === initial?.chapter ? initial.index : 0)));
+  const chapter = chapters[chapterIndex];
+  const steps = chapter.steps;
+  const index = positions[chapterIndex];
+  const show = useCallback(({ chapter: c, index: i }: Loc) => {
+    setChapterIndex(c);
+    setPositions((p) => p.map((x, k) => (k === c ? i : x)));
+  }, []);
 
   const [promptIds, setPromptIds] = useState(() => encode(model.training.presetPrompts[0]));
   const [decoding, setDecoding] = useState(DEFAULT_DECODING);
@@ -147,54 +190,53 @@ export function App() {
     [trainModel, example],
   );
 
+  const ppoTrainer = usePpoTrainer(ppoModels);
+  const ppoTrace = ppoTrainer.pending;
+  const [rolloutChoice, setRolloutIndex] = useState(0);
+  const rolloutIndex = Math.min(rolloutChoice, ppoTrace.rollouts.length - 1);
+
   const step = steps[index];
 
   const goTo = useCallback(
     (id: string) => {
-      const t = trainSteps.findIndex((s) => s.id === id);
-      if (t >= 0) {
-        setMode("training");
-        setTrainIndex(t);
-        return;
-      }
-      const i = infSteps.findIndex((s) => s.id === id);
-      if (i >= 0) {
-        setMode("inference");
-        setInfIndex(i);
-      }
+      const loc = findStep(chapters, id);
+      if (loc) show(loc);
     },
-    [infSteps, trainSteps],
+    [chapters, show],
   );
 
   useEffect(() => {
-    window.history.replaceState(null, "", `#${mode === "training" ? TRAIN_PREFIX : ""}${step.id}`);
-  }, [mode, step.id]);
+    window.history.replaceState(null, "", `#${chapter.id}/${step.id}`);
+  }, [chapter.id, step.id]);
 
   useEffect(() => {
     const onHash = () => {
-      const parsed = parseHash(infSteps, trainSteps);
-      if (!parsed) return;
-      setMode(parsed.mode);
-      (parsed.mode === "training" ? setTrainIndex : setInfIndex)(parsed.index);
+      const parsed = parseHash(chapters);
+      if (parsed) show(parsed);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
-  }, [infSteps, trainSteps]);
+  }, [chapters, show]);
+
+  const prevLoc = neighbour(chapters, { chapter: chapterIndex, index }, -1);
+  const nextLoc = neighbour(chapters, { chapter: chapterIndex, index }, 1);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTyping(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
-      const n = steps.length;
-      if (e.key === "ArrowRight") setIndex((i) => Math.min(i + 1, n - 1));
-      else if (e.key === "ArrowLeft") setIndex((i) => Math.max(i - 1, 0));
-      else if (e.key === "Home") setIndex(0);
-      else if (e.key === "End") setIndex(n - 1);
+      const here = { chapter: chapterIndex, index };
+      let to: Loc | null;
+      if (e.key === "ArrowRight") to = neighbour(chapters, here, 1);
+      else if (e.key === "ArrowLeft") to = neighbour(chapters, here, -1);
+      else if (e.key === "Home") to = { chapter: chapterIndex, index: 0 };
+      else if (e.key === "End") to = { chapter: chapterIndex, index: steps.length - 1 };
       else return;
       e.preventDefault();
+      if (to) show(to);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [steps.length, setIndex]);
+  }, [chapters, chapterIndex, index, steps.length, show]);
 
   const ctx: StepContextValue = {
     model,
@@ -209,6 +251,7 @@ export function App() {
     setHead,
     calcOpen,
     setCalcOpen,
+    chapter,
     steps,
     step,
     index,
@@ -225,103 +268,142 @@ export function App() {
     trace: trainTrace,
   };
 
+  const ppoCtx: PpoContextValue = {
+    trainer: ppoTrainer,
+    models: ppoModels,
+    trace: ppoTrace,
+    rolloutIndex,
+    setRolloutIndex,
+    rollout: ppoTrace.rollouts[rolloutIndex],
+  };
+
   const StepComponent = STEP_COMPONENTS[step.kind];
-  const revealed = mode === "inference" && index >= infSteps.findIndex((s) => s.kind === "sample");
-  const prev = steps[index - 1];
-  const next = steps[index + 1];
+  const words = (ids: number[]) => ids.map((id) => cfg.vocab[id]).join(" ");
+  const lastEval = ppoTrainer.evals[ppoTrainer.evals.length - 1];
+  const sidebarT: Record<string, number> = {
+    inference: promptIds.length,
+    pretraining: example.ids.length,
+    "post-training": ppoTrace.rollouts.reduce((s, r) => s + r.response.length, 0),
+  };
+  const stepKeys: Record<string, string> = { inference: promptIds.join(","), pretraining: String(exampleIndex) };
+  const revealed = chapter.id === "inference" && index >= steps.findIndex((s) => s.kind === "sample");
   const lastLoss = trainer.corpusHistory[trainer.corpusHistory.length - 1]?.loss;
+  const locName = (loc: Loc) => {
+    const target = chapters[loc.chapter];
+    const name = navName(target.steps[loc.index]);
+    return loc.chapter === chapterIndex ? name : `${target.title}: ${name}`;
+  };
+
+  const chapterBar: Record<string, ReactNode> = {
+    inference: (
+      <div className="prompt-display">
+        <span className="prompt-label">prompt</span>
+        {trace.tokens.map((t, i) => (
+          <span key={i} className="token-chip">
+            {t}
+          </span>
+        ))}
+        <span
+          className={revealed ? "token-chip new" : "token-chip ghost"}
+          title={revealed ? "the sampled next token" : "revealed at the sampling step"}
+        >
+          {revealed ? cfg.vocab[sampling.chosen] : "?"}
+        </span>
+        <button className="small-btn" onClick={() => setEditing((e) => !e)}>
+          {editing ? "Close" : "Change prompt"}
+        </button>
+      </div>
+    ),
+    pretraining: (
+      <div className="prompt-display">
+        <span className="prompt-label">training sentence</span>
+        <select
+          className="sentence-select"
+          value={exampleIndex}
+          onChange={(e) => setExampleIndex(Number(e.target.value))}
+        >
+          {examples.map((e, i) => (
+            <option key={e.text} value={i}>
+              {e.text}
+            </option>
+          ))}
+        </select>
+        <span className="trainer-status" title="the model's current training step and loss on the whole corpus">
+          step {trainer.state.step} · loss {lastLoss?.toFixed(3)}
+        </span>
+        <button className="small-btn" onClick={trainer.running ? trainer.pause : trainer.start}>
+          {trainer.running ? "❚❚ Pause" : "▶ Train"}
+        </button>
+      </div>
+    ),
+    "post-training": (
+      <div className="prompt-display">
+        <span className="prompt-label">response</span>
+        <select className="sentence-select" value={rolloutIndex} onChange={(e) => setRolloutIndex(Number(e.target.value))}>
+          {ppoTrace.rollouts.map((r, i) => (
+            <option key={i} value={i}>
+              {i + 1}. {words(r.prompt)} → {words(r.response)}
+            </option>
+          ))}
+        </select>
+        <span className="trainer-status" title="the policy's PPO iteration, and its exact expected score and KL to the reference at the last evaluation">
+          iteration {ppoTrainer.state.iteration} · score {lastEval?.score.toFixed(3)} · KL {lastEval?.kl.toFixed(3)}
+        </span>
+        <button className="small-btn" onClick={ppoTrainer.running ? ppoTrainer.pause : ppoTrainer.start}>
+          {ppoTrainer.running ? "❚❚ Pause" : "▶ Run PPO"}
+        </button>
+      </div>
+    ),
+  };
 
   return (
     <StepContext.Provider value={ctx}>
       <TrainingContext.Provider value={trainingCtx}>
-        <div className="app">
-          <header className="topbar">
-            <div className="brand">
-              <div className="brand-title">Transformer dry run</div>
-              <div className="brand-sub">a tiny GPT, every number exact</div>
-            </div>
-            <div className="tabs mode-tabs">
-              <button className={mode === "inference" ? "tab active" : "tab"} onClick={() => setMode("inference")}>
-                Inference: generate one token
-              </button>
-              <button className={mode === "training" ? "tab active" : "tab"} onClick={() => setMode("training")}>
-                Pretraining: one training step
-              </button>
-            </div>
-            {mode === "inference" ? (
-              <div className="prompt-display">
-                <span className="prompt-label">prompt</span>
-                {trace.tokens.map((t, i) => (
-                  <span key={i} className="token-chip">
-                    {t}
-                  </span>
-                ))}
-                <span
-                  className={revealed ? "token-chip new" : "token-chip ghost"}
-                  title={revealed ? "the sampled next token" : "revealed at the sampling step"}
-                >
-                  {revealed ? cfg.vocab[sampling.chosen] : "?"}
-                </span>
-                <button className="small-btn" onClick={() => setEditing((e) => !e)}>
-                  {editing ? "Close" : "Change prompt"}
-                </button>
+        <PpoContext.Provider value={ppoCtx}>
+          <div className="app">
+            <header className="topbar">
+              <div className="brand">
+                <div className="brand-title">Transformer dry run</div>
+                <div className="brand-sub">a tiny GPT, every number exact</div>
               </div>
-            ) : (
-              <div className="prompt-display">
-                <span className="prompt-label">training sentence</span>
-                <select
-                  className="sentence-select"
-                  value={exampleIndex}
-                  onChange={(e) => setExampleIndex(Number(e.target.value))}
-                >
-                  {examples.map((e, i) => (
-                    <option key={e.text} value={i}>
-                      {e.text}
-                    </option>
-                  ))}
-                </select>
-                <span className="trainer-status" title="the model's current training step and loss on the whole corpus">
-                  step {trainer.state.step} · loss {lastLoss?.toFixed(3)}
-                </span>
-                <button className="small-btn" onClick={trainer.running ? trainer.pause : trainer.start}>
-                  {trainer.running ? "❚❚ Pause" : "▶ Train"}
-                </button>
-              </div>
+              {chapterBar[chapter.id]}
+            </header>
+            {editing && chapter.id === "inference" && (
+              <PromptEditor
+                cfg={cfg}
+                ids={promptIds}
+                presets={model.training.presetPrompts}
+                onApply={setPromptIds}
+                onClose={() => setEditing(false)}
+              />
             )}
-          </header>
-          {editing && mode === "inference" && (
-            <PromptEditor
-              cfg={cfg}
-              ids={promptIds}
-              presets={model.training.presetPrompts}
-              onApply={setPromptIds}
-              onClose={() => setEditing(false)}
-            />
-          )}
-          <div className="main">
-            <Sidebar
-              steps={steps}
-              current={index}
-              onSelect={setIndex}
-              T={mode === "training" ? example.ids.length : promptIds.length}
-              cfg={cfg}
-            />
-            <div className="content">
-              <StepComponent key={`${mode}|${step.id}|${mode === "training" ? exampleIndex : promptIds.join(",")}`} />
-              <footer className="footer-nav">
-                <button className="nav-btn" disabled={!prev} onClick={() => setIndex(index - 1)}>
-                  ← {prev ? navName(prev) : ""}
-                </button>
-                <div className="progress" title={`step ${index} of ${steps.length - 1}`}>
-                  <div className="progress-fill" style={{ width: `${(index / (steps.length - 1)) * 100}%` }} />
-                </div>
-                <button className="nav-btn primary" disabled={!next} onClick={() => setIndex(index + 1)}>
-                  {next ? `${navName(next)} →` : "End of the walkthrough"}
-                </button>
-              </footer>
+            <div className="main">
+              <Sidebar
+                chapters={chapters}
+                chapterIndex={chapterIndex}
+                positions={positions}
+                onSelectChapter={setChapterIndex}
+                onSelectStep={(i) => show({ chapter: chapterIndex, index: i })}
+                T={sidebarT[chapter.id] ?? 0}
+                cfg={cfg}
+              />
+              <div className="content">
+                <StepComponent key={`${step.id}|${stepKeys[chapter.id] ?? ""}`} />
+                <footer className="footer-nav">
+                  <button className="nav-btn" disabled={!prevLoc} onClick={() => prevLoc && show(prevLoc)}>
+                    ← {prevLoc ? locName(prevLoc) : ""}
+                  </button>
+                  <div className="progress" title={`step ${index} of ${steps.length - 1}`}>
+                    <div className="progress-fill" style={{ width: `${(index / (steps.length - 1)) * 100}%` }} />
+                  </div>
+                  <button className="nav-btn primary" disabled={!nextLoc} onClick={() => nextLoc && show(nextLoc)}>
+                    {nextLoc ? `${locName(nextLoc)} →` : "End of the walkthrough"}
+                  </button>
+                </footer>
+              </div>
             </div>
           </div>
-        </div>
+        </PpoContext.Provider>
       </TrainingContext.Provider>
     </StepContext.Provider>
   );

@@ -47,6 +47,18 @@ export interface ModelParams {
   lnf: LayerNormParams;
 }
 
+/** A linear map from the final hidden state to one number: r = h·w + b (b is stored as a 1-vector). */
+export interface ScalarHead {
+  w: Vector;
+  b: Vector;
+}
+
+/** A transformer whose unembedding is replaced by a scalar head, like the reward and value models. */
+export interface ScalarModelParams {
+  trunk: ModelParams;
+  head: ScalarHead;
+}
+
 export interface TrainingInfo {
   corpus: { text: string; count: number }[];
   presetPrompts: string[];

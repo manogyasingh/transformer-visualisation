@@ -14,9 +14,9 @@ function isMatrix(x: unknown): x is Matrix {
  * Visits every parameter row in `p` together with the matching rows of `others`
  * (which must have the same structure). Vectors are visited as a single row.
  */
-export function forEachRow(
-  p: ModelParams,
-  others: ModelParams[],
+export function forEachRow<P extends object = ModelParams>(
+  p: P,
+  others: P[],
   fn: (row: Vector, otherRows: Vector[], inMatrix: boolean) => void,
 ): void {
   const walk = (a: unknown, bs: unknown[]) => {
@@ -39,24 +39,24 @@ function deepCopy<T>(x: T): T {
   return x;
 }
 
-export function cloneParams(p: ModelParams): ModelParams {
+export function cloneParams<P extends object = ModelParams>(p: P): P {
   return deepCopy(p);
 }
 
-export function zerosLike(p: ModelParams): ModelParams {
+export function zerosLike<P extends object = ModelParams>(p: P): P {
   const z = cloneParams(p);
   forEachRow(z, [], (row) => row.fill(0));
   return z;
 }
 
 /** acc += scale * g, in place. */
-export function addScaled(acc: ModelParams, g: ModelParams, scale: number): void {
+export function addScaled<P extends object = ModelParams>(acc: P, g: P, scale: number): void {
   forEachRow(acc, [g], (row, [gr]) => {
     for (let i = 0; i < row.length; i++) row[i] += scale * gr[i];
   });
 }
 
-export function gradNorm(g: ModelParams): number {
+export function gradNorm<P extends object = ModelParams>(g: P): number {
   let s = 0;
   forEachRow(g, [], (row) => row.forEach((x) => (s += x * x)));
   return Math.sqrt(s);

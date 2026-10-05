@@ -78,13 +78,22 @@ export interface AdamElement {
 }
 
 /** One Adam(W) update of a single number. `t` is the 1-based step; decay applies to weight matrices only. */
-export function adamElement(p: number, g: number, m: number, v: number, t: number, lr: number, decays: boolean): AdamElement {
+export function adamElement(
+  p: number,
+  g: number,
+  m: number,
+  v: number,
+  t: number,
+  lr: number,
+  decays: boolean,
+  eps = ADAM.eps,
+): AdamElement {
   const mNew = ADAM.beta1 * m + (1 - ADAM.beta1) * g;
   const vNew = ADAM.beta2 * v + (1 - ADAM.beta2) * g * g;
   const mHat = mNew / (1 - ADAM.beta1 ** t);
   const vHat = vNew / (1 - ADAM.beta2 ** t);
   const decay = decays ? ADAM.weightDecay * p : 0;
-  const update = lr * (mHat / (Math.sqrt(vHat) + ADAM.eps) + decay);
+  const update = lr * (mHat / (Math.sqrt(vHat) + eps) + decay);
   return { m: mNew, v: vNew, mHat, vHat, decay, update, pNew: p - update };
 }
 

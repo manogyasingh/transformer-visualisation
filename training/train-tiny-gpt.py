@@ -186,10 +186,6 @@ def forward(p, ids, cfg):
 
 
 def loss_and_grads(p, ids, targets, cfg):
-    B, T = ids.shape
-    d, H = cfg["d_model"], cfg["n_heads"]
-    dh = d // H
-
     logits, cache = forward(p, ids, cfg)
     mask = targets >= 0
     n = mask.sum()
@@ -208,7 +204,15 @@ def loss_and_grads(p, ids, targets, cfg):
     dlogits *= mask[..., None] / n
 
     grads["wte"] += np.einsum("btv,btd->vd", dlogits, cache["f"])
-    df = dlogits @ p["wte"]
+    backward_from_final(p, ids, cache, dlogits @ p["wte"], cfg, grads)
+    return loss, grads
+
+
+def backward_from_final(p, ids, cache, df, cfg, grads):
+    """Adds to `grads` the gradients of every weight, given df = dLoss/d(final LayerNorm output)."""
+    B, T = ids.shape
+    d, H = cfg["d_model"], cfg["n_heads"]
+    dh = d // H
     dx, grads["lnf.g"], grads["lnf.b"] = layer_norm_backward(df, cache["lnfc"])
 
     def merge(m):
@@ -250,7 +254,6 @@ def loss_and_grads(p, ids, targets, cfg):
 
     np.add.at(grads["wte"], ids, dx)
     grads["wpe"][:T] += dx.sum(0)
-    return loss, grads
 
 
 # ---------------------------------------------------------------------------
