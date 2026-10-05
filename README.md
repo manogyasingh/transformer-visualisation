@@ -30,6 +30,10 @@ Then open the URL Vite prints (usually http://localhost:5173). Use the arrow key
 | `npm run train` | Retrains the model and rewrites `src/model/tiny-gpt-weights.json` (needs Python 3 with NumPy) |
 | `npm run train-rm` | Regenerates the labeler's comparisons, retrains the reward model, and rewrites `src/model/reward-model-weights.json` |
 
+## Deployment
+
+Every push to `main` runs the tests, builds the site and publishes it to GitHub Pages at https://manogyasingh.github.io/transformer-visualisation/ (see `.github/workflows/deploy.yml`). To redeploy without a new commit, run `gh workflow run deploy.yml`.
+
 ## Layout
 
 - `training/train-tiny-gpt.py`: NumPy training script with a hand-written, gradient-checked backward pass.
