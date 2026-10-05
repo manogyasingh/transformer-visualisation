@@ -32,7 +32,7 @@ Then open the URL Vite prints (usually http://localhost:5173). Use the arrow key
 
 ## Deployment
 
-Every push to `main` runs the tests, builds the site and publishes it to GitHub Pages at https://manogyasingh.github.io/transformer-visualisation/ (see `.github/workflows/deploy.yml`). To redeploy without a new commit, run `gh workflow run deploy.yml`.
+The site is hosted on Vercel at https://llm.manogya.dev. Every push to `main` deploys it, and every other branch gets a preview URL. The build runs `npm test` first (see `vercel.json`), so a failing test stops the deploy. To deploy from your machine instead, run `npx vercel deploy --prod`.
 
 ## Layout
 
